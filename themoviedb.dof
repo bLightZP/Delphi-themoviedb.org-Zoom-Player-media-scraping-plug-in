@@ -27,11 +27,11 @@ W=0
 X=1
 Y=1
 Z=1
-ShowHints=1
+ShowHints=0
 ShowWarnings=1
 UnitAliases=WinTypes=Windows;WinProcs=Windows;DbiTypes=BDE;DbiProcs=BDE;DbiErrs=BDE;
 NamespacePrefix=
-SymbolDeprecated=0
+SymbolDeprecated=1
 SymbolLibrary=1
 SymbolPlatform=0
 UnitLibrary=1
@@ -136,8 +136,9 @@ C:\Program Files (x86)\Borland\Delphi7\Bin\dclbde70.bpl=Borland BDE DB Component
 c:\program files (x86)\borland\delphi7\Bin\dcltee70.bpl=TeeChart Components
 c:\program files (x86)\borland\delphi7\Bin\dclie70.bpl=Internet Explorer Components
 [HistoryLists\hlConditionals]
-Count=1
-Item0=DELPHI70_MODE
+Count=2
+Item0=madExcept
+Item1=DELPHI70_MODE
 [HistoryLists\hlUnitAliases]
 Count=1
 Item0=WinTypes=Windows;WinProcs=Windows;DbiTypes=BDE;DbiProcs=BDE;DbiErrs=BDE;
