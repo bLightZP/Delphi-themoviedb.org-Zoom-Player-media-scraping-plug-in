@@ -1,3 +1,5 @@
+{$I SCRAPER_DEFINES.INC}
+
 unit MediaNameParsingUnit;
 
 
@@ -280,12 +282,12 @@ var
   iYear          : Integer;
   iMediaDataIdx  : Integer;
 
-  partentFolderMediaNameYear    : Integer;
-  partentFolderMediaNameMonth   : Integer;
-  partentFolderMediaNameDay     : Integer;
-  partentFolderMediaNameSeason  : Integer;
-  partentFolderMediaNameEpisode : Integer;
-  partentFolderMediaNameRes     : String;
+  parentFolderMediaNameYear    : Integer;
+  parentFolderMediaNameMonth   : Integer;
+  parentFolderMediaNameDay     : Integer;
+  parentFolderMediaNameSeason  : Integer;
+  parentFolderMediaNameEpisode : Integer;
+  parentFolderMediaNameRes     : String;
 begin
   // Strip file extension if we're dealing with media files, with folders, pass StripFileExt=False
   If IsFolder = True then
@@ -304,7 +306,7 @@ begin
   iFlag        := -1;
 
   // Replace ".", "_" and "-" characters with spaces and UTF8 decode to unicode
-  Result := UTF8Decode(StringReplace(StringReplace(StringReplace(MediaName,'_',' ',[rfReplaceAll]),'.',' ',[rfReplaceAll]),'-',' ',[rfReplaceAll]));
+  Result := ConvertCharsToSpaces(UTF8Decode(MediaName));
 
   lS := TNT_WideLowercase(Result)+' ';
 
@@ -379,13 +381,22 @@ begin
     If iMediaDataIdx = 0 then
     Begin
       Result := '';
-      If IsFolder and (MediaSeason > -1) then
+      // we should try to extract the Title from the parent folder in the following cases
+      If    (IsFolder and (MediaSeason > -1)) //we are trying to process a folder whose name only contains the season/part number
+         or (not IsFolder and (MediaEpisode > -1)) //we are trying to process a file whose name only contains episode and probably season (but not required) number (example: \Breaking Bad\Season 02\E01 - Seven Thirty-Seven.mkv)
+      then
       Begin
-        //we are trying to process a folder which name only contains the season/part number and we should extract the Title from the parent folder
-
         // Strip backslash from folder names as needed
         If (MediaPath[Length(MediaPath)] = '\') then MediaPath := Copy(MediaPath,1,Length(MediaPath)-1);
-        Result := ParseMediaName(ExtractFileName(MediaPath),WideExtractFilePath(MediaPath),True,CategoryType,partentFolderMediaNameYear,partentFolderMediaNameMonth,partentFolderMediaNameDay,partentFolderMediaNameSeason,partentFolderMediaNameEpisode,partentFolderMediaNameRes);
+
+        Result := ParseMediaName(ExtractFileName(MediaPath),WideExtractFilePath(MediaPath),True,CategoryType,parentFolderMediaNameYear,parentFolderMediaNameMonth,parentFolderMediaNameDay,parentFolderMediaNameSeason,parentFolderMediaNameEpisode,parentFolderMediaNameRes);
+
+        If MediaYear    = -1 then MediaYear    := parentFolderMediaNameYear;
+        If MediaMonth   = -1 then MediaMonth   := parentFolderMediaNameMonth;
+        If MediaDay     = -1 then MediaDay     := parentFolderMediaNameDay;
+        If MediaSeason  = -1 then MediaSeason  := parentFolderMediaNameSeason;
+        If MediaEpisode = -1 then MediaEpisode := parentFolderMediaNameEpisode;
+        If MediaRes     = '' then MediaRes     := parentFolderMediaNameRes;
       End;
     End
       else
@@ -395,6 +406,11 @@ begin
       Combine(nList,' ',Result); // Combine the updated array back into a string
     End;
   End;
+
+  // Strip any data after the "^" special character (to allow naming tags to be ignored)
+  I := Pos('^',Result);
+  If I > 0 then Result := Copy(Result,1,I-1);
+
   Result := Trim(Result);
   nList.Free;
 end;

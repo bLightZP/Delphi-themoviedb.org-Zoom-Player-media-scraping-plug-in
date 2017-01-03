@@ -1,3 +1,5 @@
+{$I SCRAPER_DEFINES.INC}
+
 unit configformunit;
 
 interface

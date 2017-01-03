@@ -1,3 +1,5 @@
+{$I SCRAPER_DEFINES.INC}
+
 unit misc_utils_unit;
 
 
@@ -33,15 +35,19 @@ function  DownloadFileToStream(URL : String; fStream : TMemoryStream; var Status
 //function  DownloadFileToStream(URL : String; fStream : TMemoryStream) : Boolean; overload;
 function  DownloadImageToFile(URL : String; ImageFilePath, ImageFileName : WideString; var Status : String; var ErrorCode: Integer; TimeOut : DWord) : Boolean; overload;
 //function  DownloadImageToFile(URL : String; ImageFilePath, ImageFileName : WideString) : Boolean; overload;
+procedure DownloadImageToFileThreaded(URL : String; ImageFilePath, ImageFileName : WideString; var Status : String; var ErrorCode: Integer; TimeOut : DWord; var SuccessCode, DownloadEnded : Boolean);
 
-function URLEncodeUTF8(stInput : widestring) : string;
+function  URLEncodeUTF8(stInput : widestring) : string;
 
 function  SetRegDWord(BaseKey : HKey; SubKey : String; KeyEntry : String; KeyValue : Integer) : Boolean;
 function  GetRegDWord(BaseKey : HKey; SubKey : String; KeyEntry : String) : Integer;
 
 function  AddBackSlash(S : WideString) : WideString; Overload;
+function  ConvertCharsToSpaces(S : WideString) : WideString;
 
 procedure FileExtIntoStringList(fPath,fExt : WideString; fList : TTNTStrings; Recursive : Boolean);
+
+
 
 
 implementation
@@ -54,6 +60,19 @@ const
   // You must obtain your own key, it's free
   URLIdentifier     : String = 'Mozilla/4.0 (compatible; MSIE 6.0; Windows NT 5.1)';
 
+type
+  TDownloadThread = Class(TThread)
+    procedure execute; override;
+  public
+    DownloadEnded  : PBoolean;
+    SuccessCode    : PBoolean;
+    URL            : String;
+    ImageFilePath  : WideString;
+    ImageFileName  : WideString;
+    Status         : PString;
+    ErrorCode      : PInteger;
+    TimeOut        : DWord;
+  end;
 
 var
   TickCountLast    : DWORD = 0;
@@ -258,6 +277,34 @@ begin
 end;
 (**)
 
+procedure TDownloadThread.execute;
+begin
+  SuccessCode^   := DownloadImageToFile(URL,ImageFilePath,ImageFileName,Status^,ErrorCode^,TimeOut);
+  DownloadEnded^ := True;
+end;
+
+
+procedure DownloadImageToFileThreaded(URL : String; ImageFilePath, ImageFileName : WideString; var Status : String; var ErrorCode: Integer; TimeOut : DWord; var SuccessCode, DownloadEnded : Boolean);
+var
+  DownloadThread : TDownloadthread;
+begin
+  DownloadThread                    := TDownloadThread.Create(True);
+  DownloadThread.Priority           := tpIdle;
+  DownloadThread.FreeOnTerminate    := True;
+  DownloadThread.URL                := URL;
+  DownloadThread.ImageFilePath      := ImageFilePath;
+  DownloadThread.ImageFileName      := ImageFileName;
+  DownloadThread.Status             := @Status;
+  DownloadThread.ErrorCode          := @ErrorCode;
+  DownloadThread.TimeOut            := TimeOut;
+  DownloadThread.SuccessCode        := @SuccessCode;
+  DownloadThread.SuccessCode^       := False;
+  DownloadThread.DownloadEnded      := @DownloadEnded;
+  DownloadThread.DownloadEnded^     := False;
+
+  DownloadThread.Resume;
+end;
+
 
 function  DownloadImageToFile(URL : String; ImageFilePath, ImageFileName : WideString; var Status : String; var ErrorCode: Integer; TimeOut : DWord) : Boolean;
 var
@@ -429,6 +476,11 @@ begin
   Result := S;
 end;
 
+
+function ConvertCharsToSpaces(S : WideString) : WideString;
+begin
+  Result := TNT_WideStringReplace(TNT_WideStringReplace(TNT_WideStringReplace(S,'-', ' ', [rfReplaceAll]), '.', ' ', [rfReplaceAll]), '_', ' ', [rfReplaceAll]);
+end;
 
 
 procedure FileExtIntoStringList(fPath,fExt : WideString; fList : TTNTStrings; Recursive : Boolean);
