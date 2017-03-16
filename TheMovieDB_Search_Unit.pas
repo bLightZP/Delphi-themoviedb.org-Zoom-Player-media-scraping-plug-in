@@ -94,7 +94,7 @@ var
   BackdropSizeList : TStringList = nil;
   StillSizeList    : TStringList = nil;
 
-function DownloadConfiguration(Secured : Boolean; var sList : TStringList): Boolean;
+function DownloadConfiguration(Secured : Boolean): Boolean;
 
 function SearchTheMovieDB_TVShowByID(iID : Integer; Secured : Boolean; var sList : TStringList; var searchMetaData : TtmdbMetaDataRecord; var ErrorCode: Integer {$IFDEF LOCALTRACE}; ThreadID : Integer{$ENDIF}) : Boolean;
 function SearchTheMovieDB_TVShowByName(sName: WideString; MediaNameYear : Integer; Secured : Boolean; var sList : TStringList; var searchMetaData : TtmdbMetaDataRecord; var ErrorCode: Integer {$IFDEF LOCALTRACE}; ThreadID : Integer{$ENDIF}) : Boolean;
@@ -112,7 +112,7 @@ implementation
 
 
 uses
-  SysUtils, TNTSysUtils, SuperObject, Misc_Utils_Unit, global_consts;
+  SysUtils, TNTSysUtils, SuperObject, TheMovieDB_misc_utils_unit, global_consts;
 
 const
   // Strings used to identify JSON results
@@ -182,7 +182,7 @@ begin
 end;
 
 
-function DownloadConfiguration(Secured : Boolean; var sList : TStringList): Boolean;
+function DownloadConfiguration(Secured : Boolean): Boolean;
 var
   jBase       : ISuperObject;
   jBaseImages : ISuperObject;
@@ -190,6 +190,7 @@ var
   sSecure     : String;
   I           : Integer;
   tmpRes      : Boolean;
+  sList       : TStringList;
   {$IFNDEF LOCALTRACE}
   sDownloadStatus: String;
   ErrorCode   : Integer;
@@ -198,6 +199,7 @@ begin
   Result := False;
 
   If Secured = True then sSecure := 's' else sSecure := '';
+  sList :=  TStringList.Create;
   // Get Initial configuration (contains URL information for grabbing images):
   {$IFDEF LOCALTRACE}
   // When debugging, there's no need to query the database for configuration each time, this is the configuration value returned Dec. 2nd 2015:
@@ -283,6 +285,7 @@ begin
     {$IFDEF LOCALTRACE}Else DebugMsgFT('c:\log\.ScrapeTheMovieDBInit.txt','Downloaded configuration contained no data'){$ENDIF};
   End
   {$IFDEF LOCALTRACE}Else DebugMsgFT('c:\log\.ScrapeTheMovieDBInit.txt','Configuration failed to download'){$ENDIF};
+  sList.Free;
 end;
 
 
@@ -419,16 +422,16 @@ var
   dbReleaseYear      : Integer;
   dbPosterPath       : String;
 begin
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','SearchTheMovieDB (before)');{$ENDIF}
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB (before)');{$ENDIF}
   sDownloadStatus := '';
   Result := False;
 
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','CheckAndAddToSearchLimitList');{$ENDIF}
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','CheckAndAddToSearchLimitList');{$ENDIF}
   CheckAndAddToSearchLimitList;
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Download URL "'+sURL+'"');{$ENDIF}
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download URL "'+sURL+'"');{$ENDIF}
   If DownloadFileToStringList(sURL,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout) then
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Download successful');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download successful');{$ENDIF}
     If sList.Count > 0 then
     Begin
       // Sample result:
@@ -444,7 +447,7 @@ begin
         jResults := jObj.O['results'];
         If jResults <> nil then
         Begin
-          {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Got results');{$ENDIF}
+          {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Got results');{$ENDIF}
 
           // Try to find the best entry by matching the release date to the media file name's year if one exists
           MediaYearMatch    := MAXINT;
@@ -516,7 +519,7 @@ begin
             If jResult <> nil then
             Begin
               // The search results :
-              {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Got result #'+IntToStr(I));{$ENDIF}
+              {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Got result #'+IntToStr(I));{$ENDIF}
 
               dbPosterPath := jResult.S[tmdbPosterPathStr]; // Get Poster path
               If dbPosterPath = 'null' then dbPosterPath := '';
@@ -525,12 +528,12 @@ begin
               Begin
                 Result := True;
                 iID := jResult.I[tmdbIDStr];
-                {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','TMDB ID: "'+IntToStr(iID)+'"');{$ENDIF}
-                {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Poster path "'+dbPosterPath+'"');{$ENDIF}
+                {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','TMDB ID: "'+IntToStr(iID)+'"');{$ENDIF}
+                {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Poster path "'+dbPosterPath+'"');{$ENDIF}
 
                 Break;
               End
-              {$IFDEF LOCALTRACE}Else DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Skipping result #'+IntToStr(I)+' - no poster'){$ENDIF};
+              {$IFDEF LOCALTRACE}Else DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Skipping result #'+IntToStr(I)+' - no poster'){$ENDIF};
 
               jResult.Clear;
               jResult := nil;
@@ -541,7 +544,7 @@ begin
         End
           else
         Begin
-          {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error: Returned data is not valid - missing "results" section; Response: '+sList.Text);{$ENDIF}
+          {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not valid - missing "results" section; Response: '+sList.Text);{$ENDIF}
           ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
         End;
         jObj.Clear;
@@ -549,26 +552,26 @@ begin
       End
         else
       Begin
-        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error: Returned data is not JSON Object; Response: '+sList.Text);{$ENDIF}
+        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not JSON Object; Response: '+sList.Text);{$ENDIF}
         ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
       End;
     End
       else
     Begin
-      {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error: Download returned no data; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
+      {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Download returned no data; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
       ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
     End;
   End
     else
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error downloading "'+sURL+'"!; ErrorCode: '+IntToStr(ErrorCode)+'; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error downloading "'+sURL+'"!; ErrorCode: '+IntToStr(ErrorCode)+'; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
     if ErrorCode = 0 then
       If sDownloadStatus = '401' then
         ErrorCode := SCRAPE_RESULT_ERROR_DB_UNAUTHORIZED
       else
         ErrorCode := SCRAPE_RESULT_ERROR_DB_OTHER_ERROR;
   End;
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','SearchTheMovieDB (after)');{$ENDIF}
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB (after)');{$ENDIF}
 end;
 
 
@@ -581,11 +584,11 @@ begin
   Result := False;
 
   //http://api.themoviedb.org/3/tv/[id:]1399/season/[season:]1/episode/[episode:]1?api_key=[apikey]
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','TV Search URL : "'+sURL+'"');{$ENDIF}
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','TV Search URL : "'+sURL+'"');{$ENDIF}
   CheckAndAddToSearchLimitList;
   If DownloadFileToStringList(sURL,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout) then
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Download successful');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download successful');{$ENDIF}
     If sList.Count > 0 then
     Begin
       // Sample result:
@@ -610,13 +613,13 @@ begin
           Begin
             Result := True;
 
-            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','TV Poster path   "'+tmdbPosterPath+'"');{$ENDIF}
-            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','TV Backdrop path "'+tmdbBackdropPath+'"');{$ENDIF}
-            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','TV Still path    "'+tmdbStillPath+'"');{$ENDIF}
+            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','TV Poster path   "'+tmdbPosterPath+'"');{$ENDIF}
+            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','TV Backdrop path "'+tmdbBackdropPath+'"');{$ENDIF}
+            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','TV Still path    "'+tmdbStillPath+'"');{$ENDIF}
           End
             else
           Begin
-            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error: Returned data is not a valid response - missing "'+tmdbIDStr+'" value; Response: '+sList.Text);{$ENDIF}
+            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not a valid response - missing "'+tmdbIDStr+'" value; Response: '+sList.Text);{$ENDIF}
             ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
           End;
 
@@ -626,18 +629,18 @@ begin
       End
         else
       Begin
-        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','jObj = nil!!!');{$ENDIF}
+        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','jObj = nil!!!');{$ENDIF}
       End;
     End
       else
     Begin
-      {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error: Download returned no data; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
+      {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Download returned no data; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
       ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
     End;
   End
     else
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error downloading "'+sURL+'"!; ErrorCode: '+IntToStr(ErrorCode)+'; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error downloading "'+sURL+'"!; ErrorCode: '+IntToStr(ErrorCode)+'; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
     if ErrorCode = 0 then
       If sDownloadStatus = '401' then
         ErrorCode := SCRAPE_RESULT_ERROR_DB_UNAUTHORIZED
@@ -656,14 +659,14 @@ var
 begin
   If Secured = True then sSecure := 's' else sSecure := '';
   sQueryURL := 'http'+sSecure+'://api.themoviedb.org/3/search/tv?api_key='+TheMovieDB_APIKey+'&query='+URLEncodeUTF8(sName);
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','TV Show ID Search URL : "'+sQueryURL+'"');{$ENDIF}
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','TV Show ID Search URL : "'+sQueryURL+'"');{$ENDIF}
   Result := SearchTheMovieDB(sQueryURL,sName,osmTV,MediaNameYear,sList,searchMetaData.tmdbID,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
 
   If Result = True then
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','SearchTheMovieDB_TVShowByID #'+IntToStr(searchMetaData.tmdbID)+' (before)');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB_TVShowByID #'+IntToStr(searchMetaData.tmdbID)+' (before)');{$ENDIF}
     Result := SearchTheMovieDB_TVShowByID(searchMetaData.tmdbID,Secured,sList,searchMetaData,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','SearchTheMovieDB_TVShowByID (after)');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB_TVShowByID (after)');{$ENDIF}
   End;
 
   If Result = True then
@@ -738,11 +741,11 @@ begin
   If Secured = True then sSecure := 's' else sSecure := '';
   sURL := 'http'+sSecure+'://api.themoviedb.org/3/movie/'+IntToStr(iID)+'?append_to_response=credits&api_key='+TheMovieDB_APIKey;
 
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Movie Search URL : "'+sURL+'"');{$ENDIF}
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Search URL : "'+sURL+'"');{$ENDIF}
   CheckAndAddToSearchLimitList;
   If DownloadFileToStringList(sURL,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout) then
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Download successful');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download successful');{$ENDIF}
     If sList.Count > 0 then
     Begin
       // Sample result:
@@ -763,13 +766,13 @@ begin
           Begin
             Result := True;
 
-            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Movie Poster path "'+tmdbPosterPath+'"');{$ENDIF}
-            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Movie Backdrop path "'+tmdbBackdropPath+'"');{$ENDIF}
-            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Movie Still path "'+tmdbStillPath+'"');{$ENDIF}
+            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Poster path "'+tmdbPosterPath+'"');{$ENDIF}
+            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Backdrop path "'+tmdbBackdropPath+'"');{$ENDIF}
+            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Still path "'+tmdbStillPath+'"');{$ENDIF}
           End
             else
           Begin
-            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error: Returned data is not a valid response - missing "'+tmdbIDStr+'" value; Response: '+sList.Text);{$ENDIF}
+            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not a valid response - missing "'+tmdbIDStr+'" value; Response: '+sList.Text);{$ENDIF}
             ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
           End;
 
@@ -779,18 +782,18 @@ begin
       End
         else
       Begin
-        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','jObj = nil!!!');{$ENDIF}
+        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','jObj = nil!!!');{$ENDIF}
       End;
     End
       else
     Begin
-      {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error: Download returned no data; Status: "'+sDownloadStatus+'"; Response: '+sList.Text){$ENDIF};
+      {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Download returned no data; Status: "'+sDownloadStatus+'"; Response: '+sList.Text){$ENDIF};
       ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
     End;
   End
     else
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error downloading "'+sURL+'"!; ErrorCode: '+IntToStr(ErrorCode)+'; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error downloading "'+sURL+'"!; ErrorCode: '+IntToStr(ErrorCode)+'; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
     if ErrorCode = 0 then
       If sDownloadStatus = '401' then
         ErrorCode := SCRAPE_RESULT_ERROR_DB_UNAUTHORIZED
@@ -806,13 +809,13 @@ var
 begin
   If Secured = True then sSecure := 's' else sSecure := '';
   sQueryURL := 'http'+sSecure+'://api.themoviedb.org/3/search/movie?api_key='+TheMovieDB_APIKey+'&query='+URLEncodeUTF8(sName);
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Movie Search URL : "'+sQueryURL+'"');{$ENDIF}
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Search URL : "'+sQueryURL+'"');{$ENDIF}
   Result := SearchTheMovieDB(sQueryURL,sName,osmMovies,MediaNameYear,sList,searchMetaData.tmdbID,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
   If Result = True then
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','SearchTheMovieDB_MovieByID #'+IntToStr(searchMetaData.tmdbID)+' (before)');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB_MovieByID #'+IntToStr(searchMetaData.tmdbID)+' (before)');{$ENDIF}
     Result := SearchTheMovieDB_MovieByID(searchMetaData.tmdbID,Secured,sList,searchMetaData,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','SearchTheMovieDB_MovieByID (after)');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB_MovieByID (after)');{$ENDIF}
   End;
 End;
 
@@ -830,11 +833,11 @@ begin
   Result := False;
 
   // http://api.themoviedb.org/3/find/tt0266543?external_source=imdb_id&api_key={API_KEY}
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Movie Search URL : "'+sURL+'"');{$ENDIF}
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Search URL : "'+sURL+'"');{$ENDIF}
   CheckAndAddToSearchLimitList;
   If DownloadFileToStringList(sURL,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout) = True then
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Download succesful');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download succesful');{$ENDIF}
     If sList.Count > 0 then
     Begin
       // Sample result:
@@ -867,7 +870,7 @@ begin
             End
               else
             Begin
-              {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error: Returned data is not valid - missing "'+tmdbIDStr+'" value; Response: '+sList.Text);{$ENDIF}
+              {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not valid - missing "'+tmdbIDStr+'" value; Response: '+sList.Text);{$ENDIF}
               ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
             End;
           End;
@@ -877,7 +880,7 @@ begin
         End
           else
         Begin
-          {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error: Returned data is not valid - missing "'+ResultsStr+'" section; Response: '+sList.Text);{$ENDIF}
+          {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not valid - missing "'+ResultsStr+'" section; Response: '+sList.Text);{$ENDIF}
           ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
         End;
         jObj.Clear;
@@ -885,19 +888,19 @@ begin
       End
         else
       Begin
-        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error: Returned data is not JSON Object; Response: '+sList.Text);{$ENDIF}
+        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not JSON Object; Response: '+sList.Text);{$ENDIF}
         ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
       End;
     End
       else
     Begin
-      {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error: Download returned no data; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
+      {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Download returned no data; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
       ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
     End;
   End
     else
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','Error downloading "'+sURL+'"!; ErrorCode: '+IntToStr(ErrorCode)+'; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error downloading "'+sURL+'"!; ErrorCode: '+IntToStr(ErrorCode)+'; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
     if ErrorCode = 0 then
       If sDownloadStatus = '401' then
         ErrorCode := SCRAPE_RESULT_ERROR_DB_UNAUTHORIZED
@@ -918,9 +921,9 @@ begin
   Result := SearchTheMovieDB_ByIMDBURL('http'+sSecure+'://api.themoviedb.org/3/find/tt'+sIMDBID+'?external_source=imdb_id&api_key='+TheMovieDB_APIKey,osmMovies,sList,searchMetaData.tmdbID,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
   If Result = True then
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','SearchTheMovieDB_MovieByID #'+IntToStr(searchMetaData.tmdbID)+' (before)');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB_MovieByID #'+IntToStr(searchMetaData.tmdbID)+' (before)');{$ENDIF}
     Result := SearchTheMovieDB_MovieByID(searchMetaData.tmdbID,Secured,sList,searchMetaData,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','SearchTheMovieDB_MovieByID (after)');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB_MovieByID (after)');{$ENDIF}
   End;
 end;
 
@@ -936,9 +939,9 @@ begin
   Result := SearchTheMovieDB_ByIMDBURL('http'+sSecure+'://api.themoviedb.org/3/find/tt'+sIMDBID+'?external_source=imdb_id&api_key='+TheMovieDB_APIKey,osmTV,sList,searchMetaData.tmdbID,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
   If Result = True then
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','SearchTheMovieDB_TVShowByID #'+IntToStr(searchMetaData.tmdbID)+' (before)');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB_TVShowByID #'+IntToStr(searchMetaData.tmdbID)+' (before)');{$ENDIF}
     Result := SearchTheMovieDB_TVShowByID(searchMetaData.tmdbID,Secured,sList,searchMetaData,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\'+IntToStr(ThreadID)+'_ScrapeTheMovieDB.txt','SearchTheMovieDB_TVShowByID (after)');{$ENDIF}
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB_TVShowByID (after)');{$ENDIF}
   End;
 end;
 

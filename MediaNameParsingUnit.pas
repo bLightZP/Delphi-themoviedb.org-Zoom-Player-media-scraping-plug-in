@@ -14,7 +14,7 @@ function ExtractFileNameNoExt(FileName : String) : String;
 
 implementation
 
-uses sysutils, tntsysutils, dateutils, tntclasses, misc_utils_unit, global_consts;
+uses sysutils, tntsysutils, dateutils, tntclasses, TheMovieDB_misc_utils_unit, global_consts;
 
 
 procedure Split(S : WideString; Ch : Char; sList : TTNTStrings);
@@ -137,59 +137,70 @@ begin
 
     If CategoryType = osmTV then
     Begin
-      If (sLen = 3) and ((iSeason = -1) or (iEpisode = -1) or partFound) then // Snn or Enn
+      If ((iSeason = -1) or (iEpisode = -1) or partFound) then
       Begin
-        If ((lS[1] = 's') or (ls[1] = 'e')) and (lS[2] in ['0'..'9'] = True) and (lS[3] in ['0'..'9'] = True) then
+        If (sLen = 3) then // Snn or Enn
         Begin
-          if lS[1] = 's' then
-            iSeason := StrToIntDef(Copy(lS,2,2),-1);
-          if lS[1] = 'e' then
-            iEpisode := StrToIntDef(Copy(lS,2,2),-1);
-          If Result = -1 then Result := I;
-          //Break;
-        End;
-      End
-        else
-      If (sLen = 4) and ((iEpisode = -1) or partFound) then // EPnn
-      Begin
-        If (lS[1] = 'e') and (ls[2] = 'p') and (lS[3] in ['0'..'9'] = True) and (lS[4] in ['0'..'9'] = True) then
+          If ((lS[1] = 's') or (ls[1] = 'e')) and (lS[2] in ['0'..'9'] = True) and (lS[3] in ['0'..'9'] = True) then
+          Begin
+            if lS[1] = 's' then
+              iSeason := StrToIntDef(Copy(lS,2,2),-1);
+            if lS[1] = 'e' then
+              iEpisode := StrToIntDef(Copy(lS,2,2),-1);
+            If Result = -1 then Result := I;
+            //Break;
+          End;
+        End
+          else
+        If (sLen = 4) then // EPnn or nXnn
         Begin
-          iEpisode := StrToIntDef(Copy(lS,3,2),-1);
-          If Result = -1 then Result := I;
-          //Break;
-        End;
-      End
-        else
-      If (sLen = 6) and ((iSeason = -1) or (iEpisode = -1) or partFound) then // SnnEnn
-      Begin
-        If (lS[1] = 's') and (lS[4] = 'e') and (lS[2] in ['0'..'9'] = True) and (lS[3] in ['0'..'9'] = True) and (lS[5] in ['0'..'9'] = True) and (lS[6] in ['0'..'9'] = True) then
+          If (lS[1] = 'e') and (ls[2] = 'p') and (lS[3] in ['0'..'9'] = True) and (lS[4] in ['0'..'9'] = True) then
+          Begin
+            iEpisode := StrToIntDef(Copy(lS,3,2),-1);
+            If Result = -1 then Result := I;
+            //Break;
+          End;
+
+          If (lS[2] = 'x') and (lS[1] in ['0'..'9'] = True) and (lS[3] in ['0'..'9'] = True) and (lS[4] in ['0'..'9'] = True) then
+          Begin
+            iSeason  := StrToIntDef(Copy(lS,1,1),-1);
+            iEpisode := StrToIntDef(Copy(lS,3,2),-1);
+            If Result = -1 then Result := I;
+            //Break;
+          End;
+        End
+          else
+        If (sLen = 5) then // nnXnn
         Begin
-          iSeason  := StrToIntDef(Copy(lS,2,2),-1);
-          iEpisode := StrToIntDef(Copy(lS,5,2),-1);
-          If Result = -1 then Result := I;
-          //Break;
-        End;
-      End
-        else
-      If (sLen = 8) and ((iSeason = -1) or (iEpisode = -1) or partFound) then // [SnnEnn] or (SnnEnn)
-      Begin
-        If (lS[2] = 's') and (lS[5] = 'e') and (lS[3] in ['0'..'9'] = True) and (lS[4] in ['0'..'9'] = True) and (lS[6] in ['0'..'9'] = True) and (lS[7] in ['0'..'9'] = True) then
+          If (lS[3] = 'x') and (lS[1] in ['0'..'9'] = True) and (lS[2] in ['0'..'9'] = True) and (lS[4] in ['0'..'9'] = True) and (lS[5] in ['0'..'9'] = True) then
+          Begin
+            iSeason  := StrToIntDef(Copy(lS,1,2),-1);
+            iEpisode := StrToIntDef(Copy(lS,4,2),-1);
+            If Result = -1 then Result := I;
+            //Break;
+          End;
+        End
+          else
+        If (sLen = 6) then // SnnEnn
         Begin
-          iSeason  := StrToIntDef(Copy(lS,2,2),-1);
-          iEpisode := StrToIntDef(Copy(lS,5,2),-1);
-          If Result = -1 then Result := I;
-          //Break;
-        End;
-      End
-        else
-      If (sLen = 5) and ((iSeason = -1) or (iEpisode = -1) or partFound) then // nnXnn
-      Begin
-        If (lS[3] = 'x') and (lS[1] in ['0'..'9'] = True) and (lS[2] in ['0'..'9'] = True) and (lS[4] in ['0'..'9'] = True) and (lS[5] in ['0'..'9'] = True) then
+          If (lS[1] = 's') and (lS[4] = 'e') and (lS[2] in ['0'..'9'] = True) and (lS[3] in ['0'..'9'] = True) and (lS[5] in ['0'..'9'] = True) and (lS[6] in ['0'..'9'] = True) then
+          Begin
+            iSeason  := StrToIntDef(Copy(lS,2,2),-1);
+            iEpisode := StrToIntDef(Copy(lS,5,2),-1);
+            If Result = -1 then Result := I;
+            //Break;
+          End;
+        End
+          else
+        If (sLen = 8) then // [SnnEnn] or (SnnEnn)
         Begin
-          iSeason  := StrToIntDef(Copy(lS,1,2),-1);
-          iEpisode := StrToIntDef(Copy(lS,4,2),-1);
-          If Result = -1 then Result := I;
-          //Break;
+          If (lS[2] = 's') and (lS[5] = 'e') and (lS[3] in ['0'..'9'] = True) and (lS[4] in ['0'..'9'] = True) and (lS[6] in ['0'..'9'] = True) and (lS[7] in ['0'..'9'] = True) then
+          Begin
+            iSeason  := StrToIntDef(Copy(lS,2,2),-1);
+            iEpisode := StrToIntDef(Copy(lS,5,2),-1);
+            If Result = -1 then Result := I;
+            //Break;
+          End;
         End;
       End;
 
