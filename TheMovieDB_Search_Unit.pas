@@ -28,12 +28,13 @@ uses
   Classes,
   SyncObjs,
   TNTClasses,
+  {$IFDEF LOCALTRACE}msgdlgunit,{$ENDIF}
   Windows;
 
 
 Const
   {$I TheMovieDB_APIKey.inc}
-
+  {$I iso639.inc}
   maxReleaseYearDeviation = 2;
   maxCastCount = 10;
 
@@ -93,7 +94,10 @@ var
   PosterSizeList   : TStringList = nil;
   BackdropSizeList : TStringList = nil;
   StillSizeList    : TStringList = nil;
+  MaxDBPageResults : Integer = 1;
+  ISO639Language   : Integer = 0; // default
 
+procedure AddLanguageCode(var S : String);
 function DownloadConfiguration(Secured : Boolean): Boolean;
 
 function SearchTheMovieDB_TVShowByID(iID : Integer; Secured : Boolean; var sList : TStringList; var searchMetaData : TtmdbMetaDataRecord; var ErrorCode: Integer {$IFDEF LOCALTRACE}; ThreadID : Integer{$ENDIF}) : Boolean;
@@ -129,7 +133,7 @@ const
   tmdbPosterPathStr              : String = 'poster_path';
   tmdbStillPathStr               : String = 'still_path';
   tmdbBackdropPathStr            : String = 'backdrop_path';
-                                 
+
   tmdbMovieResultsStr            : String = 'movie_results';
   tmdbTVResultsStr               : String = 'tv_results';
   tmdbGenresStr                  : String = 'genres';
@@ -140,6 +144,14 @@ const
   tmdbCastResultStr              : String = 'cast';
   tmdbGenreOrCastOrCrewIDStr     : String = 'id';
   tmdbGenreOrCastOrCrewNameStr   : String = 'name';
+
+
+procedure AddLanguageCode(var S : String);
+const
+  lStr : String = '&language=';
+begin
+  If (ISO639Language > 0) and (Pos(lStr,S) = 0) then S := S+lStr+ISO639_2Codes[ISO639Language];
+end;
 
 
 procedure CheckAndAddToSearchLimitList;
@@ -405,172 +417,275 @@ begin
 end;
 
 
-function SearchTheMovieDB(sURL : String; sParsed : WideString; CategoryType : Integer; MediaNameYear : Integer; var sList : TStringList; var iID: Integer; var ErrorCode: Integer {$IFDEF LOCALTRACE}; ThreadID : Integer{$ENDIF}) : Boolean;
+function SearchTheMovieDB(sURL : String; sParsed : WideString; CategoryType : Integer; MediaNameYear : Integer; var sList : TStringList; var iID: Integer; var ErrorCode : Integer {$IFDEF LOCALTRACE}; ThreadID : Integer{$ENDIF}) : Boolean;
+type
+  TdbEntryRecord =
+  Record
+    dbrPosterPath  : String;
+    dbrReleaseYear : Integer;
+    dbrTitle       : String;
+    dbrID          : Integer;
+  End;
+  PdbEntryRecord = ^ TdbEntryRecord;
+
+const
+  matchbyName              = 0;
+  matchbyYear              = 1;
+  matchbyMode              : Integer = matchbyYear;
+
 var
-  I                  : Integer;
-  jObj               : ISuperObject;
-  jResult            : ISuperObject;
-  jResults           : ISuperObject;
-  MediaYearMatch     : Integer;
-  MediaNameMatchIdx  : Integer;
-  MediaNameAndYearMatchIdx  : Integer;
-  jStart             : Integer;
-  jEnd               : Integer;
-  sDownloadStatus    : String;
-  dbTitle            : String;
-  dbReleaseDate      : String;
-  dbReleaseYear      : Integer;
-  dbPosterPath       : String;
+  I                        : Integer;
+  jObj                     : ISuperObject;
+  jResult                  : ISuperObject;
+  jResults                 : ISuperObject;
+  MediaNameDiffBest        : Integer;
+  MediaNameDiffBestIdx     : Integer;
+  MediaNameDiff            : Integer;
+  MediaYearMatch           : Integer;
+  MediaYearMatchIdx        : Integer;
+  MediaNameMatch           : Integer;
+  MediaNameMatchIdx        : Integer;
+  MediaNameAndYearMatchIdx : Integer;
+  jStart                   : Integer;
+  jEnd                     : Integer;
+  sDownloadStatus          : String;
+  //dbTitle                  : String;
+  dbReleaseDate            : String;
+  //dbReleaseYear            : Integer;
+  //dbPosterPath             : String;
+  dbTotalPages             : Integer;
+  dbCurrentPage            : Integer;
+  dbEntries                : TList;
+  dbNewEntry               : PdbEntryRecord;
+  sURLwithPages            : String;
+
 begin
   {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB (before)');{$ENDIF}
   sDownloadStatus := '';
   Result := False;
 
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','CheckAndAddToSearchLimitList');{$ENDIF}
-  CheckAndAddToSearchLimitList;
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download URL "'+sURL+'"');{$ENDIF}
-  If DownloadFileToStringList(sURL,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout) then
-  Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download successful');{$ENDIF}
-    If sList.Count > 0 then
+  dbCurrentPage            := -1;
+  dbTotalPages             := -1;
+
+  jStart                   := -1;
+  jEnd                     := -1;
+
+  MediaYearMatch           := MAXINT;
+  MediaNameMatch           := MAXINT;
+  MediaNameDiffBest        := MAXINT;
+  MediaNameDiffBestIdx     := -1;
+  MediaYearMatchIdx        := -1;
+  MediaNameMatchIdx        := -1;
+  MediaNameAndYearMatchIdx := -1;
+
+  dbEntries := TList.Create;
+
+
+  // Download all result pages
+  Repeat
+    AddLanguageCode(sURL);
+
+    If dbCurrentPage <> -1 then sURLwithPages := sURL+'&page='+IntToStr(dbCurrentPage+1) else sURLwithPages := sURL;
+
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','CheckAndAddToSearchLimitList');{$ENDIF}
+    CheckAndAddToSearchLimitList;
+    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download URL "'+sURLwithPages+'"');{$ENDIF}
+    If DownloadFileToStringList(sURLwithPages,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout{$IFDEF LOCALTRACE},ThreadID{$ENDIF}) then
     Begin
-      // Sample result:
-      //
-      //{"page":1,"results":[{"adult":false,"backdrop_path":"/9NmTVqQ9f2ltecPZgXIj4Bk2c6s.jpg","genre_ids":[28,35,80],"id":187017,"original_language":"en","original_title":"22 Jump Street",
-      // "overview":"After making their way through high school (twice), big changes are in store for officers Schmidt and Jenko when they go deep undercover at a local college. But when Jenko meets a kindred spirit on the football team, and Schmidt infiltrates the bohemian art major scene, they begin to question their partnership. Now they don''t have to just crack the case - they have to figure out if they can have a mature elationship. If these two overgrown adolescents can grow from freshmen into real men, college might be the best thing that ever happened to them.",
-      // "release_date":"2014-06-13","poster_path":"/gNlV5FhDZ1PjxSv2aqTPS30GEon.jpg","popularity":1.984608,"title":"22 Jump Street","video":false,"vote_average":7.1,
-      // "vote_count":1570,"media_type":"movie"}],"total_pages":1,"total_results":1}
-
-      jObj := SO(sList[0]);
-      If jObj <> nil then
+      {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download successful');{$ENDIF}
+      If sList.Count > 0 then
       Begin
-        jResults := jObj.O['results'];
-        If jResults <> nil then
+        // Sample result:
+        //
+        //{"page":1,"results":[{"adult":false,"backdrop_path":"/9NmTVqQ9f2ltecPZgXIj4Bk2c6s.jpg","genre_ids":[28,35,80],"id":187017,"original_language":"en","original_title":"22 Jump Street",
+        // "overview":"After making their way through high school (twice), big changes are in store for officers Schmidt and Jenko when they go deep undercover at a local college. But when Jenko meets a kindred spirit on the football team, and Schmidt infiltrates the bohemian art major scene, they begin to question their partnership. Now they don''t have to just crack the case - they have to figure out if they can have a mature elationship. If these two overgrown adolescents can grow from freshmen into real men, college might be the best thing that ever happened to them.",
+        // "release_date":"2014-06-13","poster_path":"/gNlV5FhDZ1PjxSv2aqTPS30GEon.jpg","popularity":1.984608,"title":"22 Jump Street","video":false,"vote_average":7.1,
+        // "vote_count":1570,"media_type":"movie"}],"total_pages":1,"total_results":1}
+
+        jObj := SO(sList[0]);
+        If jObj <> nil then
         Begin
-          {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Got results');{$ENDIF}
+          dbCurrentPage := jObj.I['page'];
+          dbTotalPages  := jObj.I['total_pages'];
+          jResults      := jObj.O['results'];
 
-          // Try to find the best entry by matching the release date to the media file name's year if one exists
-          MediaYearMatch    := MAXINT;
-          MediaNameMatchIdx := -1;
-          MediaNameAndYearMatchIdx := -1;
-          For I := 0 to jResults.AsArray.Length-1 do
+          {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Page : '+IntToStr(dbCurrentPage)+'/'+IntToStr(dbTotalPages));{$ENDIF}
+
+          If jResults <> nil then
           Begin
-            jResult := jResults.AsArray[I];
-            If jResult <> nil then
+            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Got results');{$ENDIF}
+
+            // Try to find the best entry by matching the release date to the media file name's year if one exists
+            For I := 0 to jResults.AsArray.Length-1 do
             Begin
-              // To help make the match, we need a title, a valid poster path and a release date
-
-              if CategoryType = osmTV then
-                //dbTitle := UTF8Decode(jResult.S[tmdbTVTitleStr]) // Get Name
-                //else dbTitle := UTF8Decode(jResult.S[tmdbMovieTitleStr]); // Get Title
-                //dbTitle := TNT_WideStringReplace(UTF8Decode(jResult.S[tmdbTVTitleStr]), '-', ' ', [rfReplaceAll]) // Get Name
-                //else dbTitle := TNT_WideStringReplace(UTF8Decode(jResult.S[tmdbMovieTitleStr]), '-', ' ', [rfReplaceAll]); // Get Title
-                dbTitle := ConvertCharsToSpaces(UTF8Decode(jResult.S[tmdbTVTitleStr])) else // Get Name
-                dbTitle := ConvertCharsToSpaces(UTF8Decode(jResult.S[tmdbMovieTitleStr]));  // Get Title
-
-              if CategoryType = osmTV then dbReleaseDate := jResult.S[tmdbTVShowReleaseStr] // Get Release Date [YYYY/MM/DD] format
-                else dbReleaseDate := jResult.S[tmdbReleaseDateStr]; // Get Release Date [YYYY/MM/DD] format
-              If (dbReleaseDate <> '') and (Length(dbReleaseDate) > 4) then dbReleaseYear := StrToIntDef(Copy(dbReleaseDate,1,4),-1) else dbReleaseYear := -1;
-
-              dbPosterPath := jResult.S[tmdbPosterPathStr]; // Get Poster path
-              If dbPosterPath = 'null' then dbPosterPath := '';
-
-              // Try to find a title that exactly matches the media name
-              if (WideCompareText(sParsed,dbTitle) = 0) then
+              jResult := jResults.AsArray[I];
+              If jResult <> nil then
               Begin
-                If MediaNameMatchIdx = -1 then
-                  MediaNameMatchIdx := I;
-                // Try to find closest release year to our name based year that still exactly matches the media name
-                If (MediaNameYear > -1) and (dbReleaseYear > -1) and (dbPosterPath <> '') then If (Abs(MediaNameYear-dbReleaseYear) < MediaYearMatch) and (Abs(MediaNameYear-dbReleaseYear) <= maxReleaseYearDeviation) then
-                Begin;
-                  MediaYearMatch    := Abs(MediaNameYear-dbReleaseYear);
-                  MediaNameAndYearMatchIdx := I;
-                  // If we find an exact match there is no need to continue searching
-                  If MediaYearMatch = 0 then Break;
-                End;
+                New(dbNewEntry);
+
+                // To help make the match, we need a title, a valid poster path and a release date
+
+                If CategoryType = osmTV then
+                  dbNewEntry^.dbrTitle := ConvertCharsToSpaces(UTF8Decode(jResult.S[tmdbTVTitleStr])) else // Get Name
+                  dbNewEntry^.dbrTitle := ConvertCharsToSpaces(UTF8Decode(jResult.S[tmdbMovieTitleStr]));  // Get Title
+
+                If CategoryType = osmTV then dbReleaseDate := jResult.S[tmdbTVShowReleaseStr] // Get Release Date [YYYY/MM/DD] format
+                  else dbReleaseDate := jResult.S[tmdbReleaseDateStr]; // Get Release Date [YYYY/MM/DD] format
+                If (dbReleaseDate <> '') and (Length(dbReleaseDate) > 4) then dbNewEntry^.dbrReleaseYear := StrToIntDef(Copy(dbReleaseDate,1,4),-1) else dbNewEntry^.dbrReleaseYear := -1;
+
+                dbNewEntry^.dbrPosterPath := jResult.S[tmdbPosterPathStr]; // Get Poster path
+                If dbNewEntry^.dbrPosterPath = 'null' then dbNewEntry^.dbrPosterPath := '';
+
+                dbNewEntry^.dbrID := jResult.I[tmdbIDStr]; // Get movie ID
+
+                dbEntries.Add(dbNewEntry);
+
+                jResult.Clear;
+                jResult := nil;
+              End
+                else
+              Begin
+                {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not valid - missing "result" section; Response: '+sList.Text);{$ENDIF}
+                ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
               End;
             End;
-          End;
-
-          If MediaNameAndYearMatchIdx > -1 then
-          Begin
-            // Found a "perfect" match, use a specific result
-            jStart := MediaNameAndYearMatchIdx;
-            jEnd   := MediaNameAndYearMatchIdx;
-          End
-            else
-          If MediaNameMatchIdx > -1 then
-          Begin
-            // Found a good match, use a specific result
-            jStart := MediaNameMatchIdx;
-            jEnd   := MediaNameMatchIdx;
+            jResults.Clear;
+            jResults := nil;
           End
             else
           Begin
-            // No match, scan all results
-            jStart := 0;
-            jEnd   := jResults.AsArray.Length-1;
+            {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not valid - missing "results" section; Response: '+sList.Text);{$ENDIF}
+            ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
           End;
-
-          // Run through multiple results until we find the first one with a poster
-          For I := jStart to jEnd do
-          Begin
-            jResult := jResults.AsArray[I];
-            If jResult <> nil then
-            Begin
-              // The search results :
-              {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Got result #'+IntToStr(I));{$ENDIF}
-
-              dbPosterPath := jResult.S[tmdbPosterPathStr]; // Get Poster path
-              If dbPosterPath = 'null' then dbPosterPath := '';
-
-              If (dbPosterPath <> '') then
-              Begin
-                Result := True;
-                iID := jResult.I[tmdbIDStr];
-                {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','TMDB ID: "'+IntToStr(iID)+'"');{$ENDIF}
-                {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Poster path "'+dbPosterPath+'"');{$ENDIF}
-
-                Break;
-              End
-              {$IFDEF LOCALTRACE}Else DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Skipping result #'+IntToStr(I)+' - no poster'){$ENDIF};
-
-              jResult.Clear;
-              jResult := nil;
-            End;
-          End;
-          jResults.Clear;
-          jResults := nil;
+          jObj.Clear;
+          jObj := nil;
         End
           else
         Begin
-          {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not valid - missing "results" section; Response: '+sList.Text);{$ENDIF}
+          {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not JSON Object; Response: '+sList.Text);{$ENDIF}
           ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
         End;
-        jObj.Clear;
-        jObj := nil;
       End
         else
       Begin
-        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Returned data is not JSON Object; Response: '+sList.Text);{$ENDIF}
+        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Download returned no data; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
         ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
       End;
     End
       else
     Begin
-      {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error: Download returned no data; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
-      ErrorCode := SCRAPE_RESULT_ERROR_DB_UNSUPPORTED_RESPONSE;
+      {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error downloading "'+sURL+'"!; ErrorCode: '+IntToStr(ErrorCode)+'; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
+      if ErrorCode = 0 then
+        If sDownloadStatus = '401' then
+          ErrorCode := SCRAPE_RESULT_ERROR_DB_UNAUTHORIZED
+        else
+          ErrorCode := SCRAPE_RESULT_ERROR_DB_OTHER_ERROR;
     End;
+  Until (ErrorCode <> S_OK) or (dbCurrentPage = dbTotalPages) or (dbCurrentPage = MaxDBPageResults);
+
+  // Scan results for best match
+  For I := 0 to dbEntries.Count-1 do with PdbEntryRecord(dbEntries[I])^ do
+  Begin
+    // Try to find a title that exactly matches the media name
+    MediaNameDiff := WideCompareText(sParsed,dbrTitle);
+    If (MediaNameDiff = 0) then
+    Begin
+      If (MediaNameMatchIdx = -1) and (dbrPosterPath <> '') then MediaNameMatchIdx := I;
+
+      // Try to find closest release year to our name based year that still exactly matches the media name
+      If (MediaNameYear > -1) and (dbrReleaseYear > -1) and (dbrPosterPath <> '') then
+        If (Abs(MediaNameYear-dbrReleaseYear) < MediaYearMatch) and (Abs(MediaNameYear-dbrReleaseYear) <= maxReleaseYearDeviation) then
+      Begin
+        MediaYearMatch    := Abs(MediaNameYear-dbrReleaseYear);
+        MediaNameAndYearMatchIdx := I;
+        // If we find an exact match there is no need to continue searching
+        If MediaYearMatch = 0 then Break;
+      End;
+    End
+      else
+    Begin
+      If (dbrPosterPath <> '') then
+      Begin
+        MediaNameDiff := LevenshteinDistance(sParsed,dbrTitle);
+        If MediaNameDiff < MediaNameDiffBest then
+        Begin
+          MediaNameDiffBest    := MediaNameDiff;
+          MediaNameDiffBestIdx := I;
+        End;
+
+        // Try to find the best matching year with least diff on name
+        If (MediaNameYear > -1) and (dbrReleaseYear = MediaNameYear) and (dbrPosterPath <> '') and (MediaNameDiff > -1) then
+        Begin
+          If MediaNameDiff < MediaNameMatch then
+          Begin
+            MediaNameMatch    := MediaNameDiff;
+            MediaYearMatchIdx := I;
+          End;
+        End;
+      End;
+    End;
+  End;
+
+  If (MediaNameAndYearMatchIdx > -1) and ((MediaYearMatch = 0) or (matchbyMode = matchbyName)) then
+  Begin
+    // Found a "perfect" match, use a specific result
+    jStart := MediaNameAndYearMatchIdx;
+    jEnd   := MediaNameAndYearMatchIdx;
+  End
+    else
+  If (MediaYearMatchIdx > -1) and (matchbyMode = matchbyYear) and (MediaNameMatch > -1) then
+  Begin
+    // Found a year match, use a specific result
+    jStart := MediaYearMatchIdx;
+    jEnd   := MediaYearMatchIdx;
+  End
+    else
+  If (MediaNameAndYearMatchIdx > -1) and (matchbyMode = matchbyYear) then
+  Begin
+    jStart := MediaNameAndYearMatchIdx;
+    jEnd   := MediaNameAndYearMatchIdx;
+  End
+    else
+  If MediaNameMatchIdx > -1 then
+  Begin
+    // Found a good match, use a specific result
+    jStart := MediaNameMatchIdx;
+    jEnd   := MediaNameMatchIdx;
+  End
+    else
+  If (MediaNameDiffBest < MAXINT) then
+  Begin
+    jStart := MediaNameDiffBestIdx;
+    jEnd   := MediaNameDiffBestIdx;
   End
     else
   Begin
-    {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Error downloading "'+sURL+'"!; ErrorCode: '+IntToStr(ErrorCode)+'; Status: "'+sDownloadStatus+'"; Response: '+sList.Text);{$ENDIF}
-    if ErrorCode = 0 then
-      If sDownloadStatus = '401' then
-        ErrorCode := SCRAPE_RESULT_ERROR_DB_UNAUTHORIZED
-      else
-        ErrorCode := SCRAPE_RESULT_ERROR_DB_OTHER_ERROR;
+    // No match, scan all results
+    jStart := 0;
+    jEnd   := dbEntries.Count-1;
   End;
+
+  If (jStart > -1) and (jEnd > -1) then
+  Begin
+    // Run through multiple results until we find the first one with a poster
+    For I := jStart to jEnd do with PdbEntryRecord(dbEntries[I])^ do
+    Begin
+      If (dbrPosterPath <> '') then
+      Begin
+        Result := True;
+        iID    := dbrID;
+        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','TMDB ID: "'+IntToStr(iID)+'"');{$ENDIF}
+        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Poster path "'+dbrPosterPath+'"');{$ENDIF}
+
+        Break;
+      End
+      {$IFDEF LOCALTRACE}Else DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Skipping result #'+IntToStr(I)+' - no poster'){$ENDIF};
+    End;
+  End;
+
+  For I := 0 to dbEntries.Count-1 do Dispose(PdbEntryRecord(dbEntries[I]));
+  dbEntries.Free;
+
   {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB (after)');{$ENDIF}
 end;
 
@@ -583,10 +698,12 @@ begin
   sDownloadStatus := '';
   Result := False;
 
+  AddLanguageCode(sURL);
+
   //http://api.themoviedb.org/3/tv/[id:]1399/season/[season:]1/episode/[episode:]1?api_key=[apikey]
   {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','TV Search URL : "'+sURL+'"');{$ENDIF}
   CheckAndAddToSearchLimitList;
-  If DownloadFileToStringList(sURL,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout) then
+  If DownloadFileToStringList(sURL,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout{$IFDEF LOCALTRACE},ThreadID{$ENDIF}) = True then
   Begin
     {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download successful');{$ENDIF}
     If sList.Count > 0 then
@@ -629,7 +746,7 @@ begin
       End
         else
       Begin
-        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','jObj = nil!!!');{$ENDIF}
+        {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','jObj = nil!!!; Response: '+sList.Text);{$ENDIF}
       End;
     End
       else
@@ -659,6 +776,9 @@ var
 begin
   If Secured = True then sSecure := 's' else sSecure := '';
   sQueryURL := 'http'+sSecure+'://api.themoviedb.org/3/search/tv?api_key='+TheMovieDB_APIKey+'&query='+URLEncodeUTF8(sName);
+
+  AddLanguageCode(sQueryURL);
+
   {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','TV Show ID Search URL : "'+sQueryURL+'"');{$ENDIF}
   Result := SearchTheMovieDB(sQueryURL,sName,osmTV,MediaNameYear,sList,searchMetaData.tmdbID,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
 
@@ -703,9 +823,12 @@ End;
 function SearchTheMovieDB_TVShowByID(iID : Integer; Secured : Boolean; var sList : TStringList; var searchMetaData : TtmdbMetaDataRecord; var ErrorCode: Integer {$IFDEF LOCALTRACE}; ThreadID : Integer{$ENDIF}) : Boolean;
 var
   sSecure : String;
+  sURL    : String;
 begin
   If Secured = True then sSecure := 's' else sSecure := '';
-  Result := SearchTheMovieDB_TVByURL('http'+sSecure+'://api.themoviedb.org/3/tv/'+IntToStr(iID)+'?append_to_response=credits&api_key='+TheMovieDB_APIKey,sList,searchMetaData,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
+  sURL := 'http'+sSecure+'://api.themoviedb.org/3/tv/'+IntToStr(iID)+'?append_to_response=credits&api_key='+TheMovieDB_APIKey;
+  AddLanguageCode(sURL);
+  Result := SearchTheMovieDB_TVByURL(sURL,sList,searchMetaData,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
   If Result = True then searchMetaData.tmdbTVShowName := searchMetaData.tmdbTitle;
 End;
 
@@ -713,18 +836,24 @@ End;
 function SearchTheMovieDB_TVSeasonByID(iID, iSeason : Integer; Secured : Boolean; var sList : TStringList; var searchMetaData : TtmdbMetaDataRecord; var ErrorCode: Integer {$IFDEF LOCALTRACE}; ThreadID : Integer{$ENDIF}) : Boolean;
 var
   sSecure : String;
+  sURL    : String;
 begin
   If Secured = True then sSecure := 's' else sSecure := '';
-  Result := SearchTheMovieDB_TVByURL('http'+sSecure+'://api.themoviedb.org/3/tv/'+IntToStr(iID)+'/season/'+IntToStr(iSeason)+'?append_to_response=credits&api_key='+TheMovieDB_APIKey,sList,searchMetaData,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
+  sURL := 'http'+sSecure+'://api.themoviedb.org/3/tv/'+IntToStr(iID)+'/season/'+IntToStr(iSeason)+'?append_to_response=credits&api_key='+TheMovieDB_APIKey;
+  AddLanguageCode(sURL);
+  Result := SearchTheMovieDB_TVByURL(sURL,sList,searchMetaData,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
 End;
 
 
 function SearchTheMovieDB_TVEpisodeByID(iID, iSeason, iEpisode : Integer; Secured : Boolean; var sList : TStringList; var searchMetaData : TtmdbMetaDataRecord; var ErrorCode: Integer {$IFDEF LOCALTRACE}; ThreadID : Integer{$ENDIF}) : Boolean; overload;
 var
   sSecure : String;
+  sURL    : String;
 begin
   If Secured = True then sSecure := 's' else sSecure := '';
-  Result := SearchTheMovieDB_TVByURL('http'+sSecure+'://api.themoviedb.org/3/tv/'+IntToStr(iID)+'/season/'+IntToStr(iSeason)+'/episode/'+IntToStr(iEpisode)+'?append_to_response=credits&api_key='+TheMovieDB_APIKey,sList,searchMetaData,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
+  sURL := 'http'+sSecure+'://api.themoviedb.org/3/tv/'+IntToStr(iID)+'/season/'+IntToStr(iSeason)+'/episode/'+IntToStr(iEpisode)+'?append_to_response=credits&api_key='+TheMovieDB_APIKey;
+  AddLanguageCode(sURL);
+  Result := SearchTheMovieDB_TVByURL(sURL,sList,searchMetaData,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
 End;
 
 
@@ -741,9 +870,11 @@ begin
   If Secured = True then sSecure := 's' else sSecure := '';
   sURL := 'http'+sSecure+'://api.themoviedb.org/3/movie/'+IntToStr(iID)+'?append_to_response=credits&api_key='+TheMovieDB_APIKey;
 
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Search URL : "'+sURL+'"');{$ENDIF}
+  AddLanguageCode(sURL);
+
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Search URL :'+CRLF+sURL+CRLF);{$ENDIF}
   CheckAndAddToSearchLimitList;
-  If DownloadFileToStringList(sURL,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout) then
+  If DownloadFileToStringList(sURL,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout{$IFDEF LOCALTRACE},ThreadID{$ENDIF}) then
   Begin
     {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download successful');{$ENDIF}
     If sList.Count > 0 then
@@ -809,7 +940,8 @@ var
 begin
   If Secured = True then sSecure := 's' else sSecure := '';
   sQueryURL := 'http'+sSecure+'://api.themoviedb.org/3/search/movie?api_key='+TheMovieDB_APIKey+'&query='+URLEncodeUTF8(sName);
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Search URL : "'+sQueryURL+'"');{$ENDIF}
+  AddLanguageCode(sQueryURL);
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Search URL : '+CRLF+sQueryURL+CRLF);{$ENDIF}
   Result := SearchTheMovieDB(sQueryURL,sName,osmMovies,MediaNameYear,sList,searchMetaData.tmdbID,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
   If Result = True then
   Begin
@@ -832,10 +964,12 @@ begin
   sDownloadStatus := '';
   Result := False;
 
+  AddLanguageCode(sURL);
+
   // http://api.themoviedb.org/3/find/tt0266543?external_source=imdb_id&api_key={API_KEY}
-  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Search URL : "'+sURL+'"');{$ENDIF}
+  {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Movie Search URL :'+CRLF+sURL+CRLF);{$ENDIF}
   CheckAndAddToSearchLimitList;
-  If DownloadFileToStringList(sURL,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout) = True then
+  If DownloadFileToStringList(sURL,sList,sDownloadStatus,ErrorCode,tmdbQueryInternetTimeout{$IFDEF LOCALTRACE},ThreadID{$ENDIF}) = True then
   Begin
     {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','Download succesful');{$ENDIF}
     If sList.Count > 0 then
@@ -914,11 +1048,15 @@ function SearchTheMovieDB_MovieByIMDBID(iIMDBID : Integer; Secured : Boolean; va
 var
   sSecure : String;
   sIMDBID : String;
+  sURL    : String;
 begin
   sIMDBID := IntToStr(iIMDBID);
   While Length(sIMDBID) < 7 do sIMDBID := '0'+sIMDBID;
   If Secured = True then sSecure := 's' else sSecure := '';
-  Result := SearchTheMovieDB_ByIMDBURL('http'+sSecure+'://api.themoviedb.org/3/find/tt'+sIMDBID+'?external_source=imdb_id&api_key='+TheMovieDB_APIKey,osmMovies,sList,searchMetaData.tmdbID,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
+  sURL := 'http'+sSecure+'://api.themoviedb.org/3/find/tt'+sIMDBID+'?external_source=imdb_id&api_key='+TheMovieDB_APIKey;
+  AddLanguageCode(sURL);
+
+  Result := SearchTheMovieDB_ByIMDBURL(sURL,osmMovies,sList,searchMetaData.tmdbID,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
   If Result = True then
   Begin
     {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB_MovieByID #'+IntToStr(searchMetaData.tmdbID)+' (before)');{$ENDIF}
@@ -932,11 +1070,15 @@ function SearchTheMovieDB_TVShowByIMDBID(iIMDBID : Integer; Secured : Boolean; v
 var
   sSecure : String;
   sIMDBID : String;
+  sURL    : String;
 begin
   sIMDBID := IntToStr(iIMDBID);
   While Length(sIMDBID) < 7 do sIMDBID := '0'+sIMDBID;
   If Secured = True then sSecure := 's' else sSecure := '';
-  Result := SearchTheMovieDB_ByIMDBURL('http'+sSecure+'://api.themoviedb.org/3/find/tt'+sIMDBID+'?external_source=imdb_id&api_key='+TheMovieDB_APIKey,osmTV,sList,searchMetaData.tmdbID,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
+  sURL := 'http'+sSecure+'://api.themoviedb.org/3/find/tt'+sIMDBID+'?external_source=imdb_id&api_key='+TheMovieDB_APIKey;
+  AddLanguageCode(sURL);
+
+  Result := SearchTheMovieDB_ByIMDBURL(sURL,osmTV,sList,searchMetaData.tmdbID,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
   If Result = True then
   Begin
     {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB_TVShowByID #'+IntToStr(searchMetaData.tmdbID)+' (before)');{$ENDIF}

@@ -44,6 +44,7 @@ uses
   TNTClasses,
   TNTSysUtils,
   SuperObject,
+  {$IFDEF LOCALTRACE}msgdlgunit,{$ENDIF}
   WinInet,
   MediaNameParsingUnit in 'MediaNameParsingUnit.pas',
   TheMovieDB_Search_Unit in 'TheMovieDB_Search_Unit.pas',
@@ -55,10 +56,11 @@ uses
 
 Const
   // Settings Registry Path and Key
-  ScraperRegKey    : String = 'Software\VirtuaMedia\ZoomPlayer\Scrapers\TheMovieDB';
-  RegKeySecuredStr : String = 'Secured';
+  ScraperRegKey                                : String = 'Software\VirtuaMedia\ZoomPlayer\Scrapers\TheMovieDB';
+  RegKeySecuredStr                             : String = 'Secured';
   RegKeyMinMediaNameLengthForScrapingByNameStr : String = 'MinMediaNameLengthForScrapingByName';
-
+  RegKeyMaxDBPageResultsStr                    : String = 'MaxDBPageResultsStr';
+  RegKeyISO639Language                         : String = 'ISO639Language';
 
   //Strings used to store the data in the Metadata File
   mdfPrefix : String = 'TheMovieDB_';
@@ -84,10 +86,9 @@ Const
   {$SetPEFlags IMAGE_FILE_LARGE_ADDRESS_AWARE}
 
 Var
-  SecureHTTP       : Boolean = False;
-  csInit           : TCriticalSection = nil;
+  SecureHTTP                          : Boolean = False;
+  csInit                              : TCriticalSection = nil;
   MinMediaNameLengthForScrapingByName : Integer = 2;
-
 
 // Called by Zoom Player to free any resources allocated in the DLL prior to unloading the DLL.
 Procedure FreeScraper; stdcall;
@@ -160,6 +161,10 @@ begin
   If I > -1 then SecureHTTP := Boolean(I);
   I := GetRegDWord(HKEY_CURRENT_USER,ScraperRegKey,RegKeyMinMediaNameLengthForScrapingByNameStr);
   If I > -1 then MinMediaNameLengthForScrapingByName := I;
+  I := GetRegDWord(HKEY_CURRENT_USER,ScraperRegKey,RegKeyMaxDBPageResultsStr);
+  If I > -1 then MaxDBPageResults := I;
+  I := GetRegDWord(HKEY_CURRENT_USER,ScraperRegKey,RegKeyISO639Language);
+  If I > -1 then ISO639Language := I;
 
   Result := True;
   {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\.ScrapeTheMovieDBInit.txt','Init Scraper (after)'+CRLF);{$ENDIF}
@@ -177,8 +182,10 @@ end;
 // Called by Zoom Player to show the scraper's configuration dialog.
 Procedure Configure(CenterOnWindow : HWND); stdcall;
 var
+  I            : Integer;
+  tmpInt       : Integer;
   CenterOnRect : TRect;
-  tmpInt: Integer;
+
 begin
   {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\.ScrapeTheMovieDBInit.txt','Configuration (before)');{$ENDIF}
   If GetWindowRect(CenterOnWindow,CenterOnRect) = False then
@@ -188,8 +195,12 @@ begin
   ConfigForm.SetBounds(CenterOnRect.Left+(((CenterOnRect.Right -CenterOnRect.Left)-ConfigForm.Width)  div 2),
                        CenterOnRect.Top +(((CenterOnRect.Bottom-CenterOnRect.Top )-ConfigForm.Height) div 2),ConfigForm.Width,ConfigForm.Height);
 
+  For I := 0 to ISO639CodeCount-1 do ConfigForm.LanguageCB.Items.Add(ISO639Names[I]);
+
   ConfigForm.SecureCommCB.Checked := SecureHTTP;
   ConfigForm.edtMinMediaNameLengthForScrapingByName.Text := IntToStr(MinMediaNameLengthForScrapingByName);
+  ConfigForm.edtMaxDBPageResults.Text                    := IntToStr(MaxDBPageResults);
+  ConfigForm.LanguageCB.ItemIndex                        := ISO639Language;
 
   If ConfigForm.ShowModal = mrOK then
   Begin
@@ -199,12 +210,27 @@ begin
       SecureHTTP := ConfigForm.SecureCommCB.Checked;
       SetRegDWord(HKEY_CURRENT_USER,ScraperRegKey,RegKeySecuredStr,Integer(SecureHTTP));
     End;
-    tmpInt := StrToInt(ConfigForm.edtMinMediaNameLengthForScrapingByName.Text);
+    tmpInt := StrToIntDef(ConfigForm.edtMinMediaNameLengthForScrapingByName.Text,MinMediaNameLengthForScrapingByName);
+    If tmpInt < 2 then tmpInt := 2;
+    If tmpInt > 9 then tmpInt := 9;
     If MinMediaNameLengthForScrapingByName <> tmpInt then
     Begin
       MinMediaNameLengthForScrapingByName := tmpInt;
       SetRegDWord(HKEY_CURRENT_USER,ScraperRegKey,RegKeyMinMediaNameLengthForScrapingByNameStr,MinMediaNameLengthForScrapingByName);
     End;
+    tmpInt := StrToIntDef(ConfigForm.edtMaxDBPageResults.Text,MaxDBPageResults);
+    If tmpInt <   1 then tmpInt :=   1;
+    If tmpInt > 999 then tmpInt := 999;
+    If MaxDBPageResults <> tmpInt then
+    Begin
+      MaxDBPageResults := tmpInt;
+      SetRegDWord(HKEY_CURRENT_USER,ScraperRegKey,RegKeyMaxDBPageResultsStr,MaxDBPageResults);
+    End;
+    If ISO639Language <> ConfigForm.LanguageCB.ItemIndex then
+    Begin
+      ISO639Language := ConfigForm.LanguageCB.ItemIndex;
+      SetRegDWord(HKEY_CURRENT_USER,ScraperRegKey,RegKeyISO639Language,ISO639Language);
+    End;  
   End;
   ConfigForm.Free;
   {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\.ScrapeTheMovieDBInit.txt','Configuration (after)');{$ENDIF}
@@ -394,13 +420,14 @@ begin
     // Parse the media name
     {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','Parse media name "'+UTF8Decode(Media_Name)+'"');{$ENDIF}
     sParsed := ParseMediaName(Media_Name,Media_Path,IsFolder,CategoryType,mdMediaNameYear,mdMediaNameMonth,mdMediaNameDay,mdMediaNameSeason,mdMediaNameEpisode,mdMediaNameRes);
+    //{$IFDEF LOCALTRACE}ShowMessageW(sParsed);{$ENDIF}
     {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','Parsed name "'+sParsed+'"'+', Resolution: '+mdMediaNameRes+', Year: '+IntToStr(mdMediaNameYear)+', Month: '+IntToStr(mdMediaNameMonth)+', Day: '+IntToStr(mdMediaNameDay)+', Season: '+IntToStr(mdMediaNameSeason)+', Episode: '+IntToStr(mdMediaNameEpisode));{$ENDIF}
 
     // Try finding an IMDB ID in any ".NFO" files within the folder or next to the media file
     {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','Find IMDB ID');{$ENDIF}
     If IsFolder = True then
-      IMDB_ID := FindIMDBIDInNFOFiles(AddBackSlash(Media_Path)+Media_Name, '') else
-      IMDB_ID := FindIMDBIDInNFOFiles(Media_Path, Media_Name);
+      IMDB_ID := FindIMDBIDInNFOFiles(AddBackSlash(UTF8Decode(Media_Path))+UTF8Decode(Media_Name), '') else
+      IMDB_ID := FindIMDBIDInNFOFiles(UTF8Decode(Media_Path), UTF8Decode(Media_Name));
     {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','IMDB ID: '+IntToStr(IMDB_ID));{$ENDIF}
 
     If (IMDB_ID = -1) and ((sParsed = '') or
@@ -606,7 +633,7 @@ begin
       Begin
         {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','Download URL : "'+sSecure+Poster_Size+MetaData.tmdbPosterPath+'"');{$ENDIF}
         dlPosterSearch := True;
-        DownloadImageToFileThreaded(sSecure+Poster_Size+MetaData.tmdbPosterPath, Data_Path, Poster_File,sDLStatusPoster,ErrCodePoster,tmdbQueryInternetTimeout,dlPosterSuccess,dlPosterComplete);
+        DownloadImageToFileThreaded(sSecure+Poster_Size+MetaData.tmdbPosterPath, Data_Path, Poster_File,sDLStatusPoster,ErrCodePoster,tmdbQueryInternetTimeout,dlPosterSuccess,dlPosterComplete{$IFDEF LOCALTRACE},grabThreadID{$ENDIF});
 
         (*If DownloadImageToFile(sSecure+Poster_Size+MetaData.tmdbPosterPath, Data_Path, Poster_File,sDownloadStatus,LastErrorCode,tmdbQueryInternetTimeout) = True then
         Begin
@@ -621,7 +648,7 @@ begin
       Begin
         {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','Download URL : "'+sSecure+Backdrop_Size+MetaData.tmdbBackdropPath+'"');{$ENDIF}
         dlBackdropSearch := True;
-        DownloadImageToFileThreaded(sSecure+Backdrop_Size+MetaData.tmdbBackdropPath, Data_Path, Backdrop_File,sDLStatusBackdrop,ErrCodeBackdrop,tmdbQueryInternetTimeout,dlBackdropSuccess,dlBackdropComplete);
+        DownloadImageToFileThreaded(sSecure+Backdrop_Size+MetaData.tmdbBackdropPath, Data_Path, Backdrop_File,sDLStatusBackdrop,ErrCodeBackdrop,tmdbQueryInternetTimeout,dlBackdropSuccess,dlBackdropComplete{$IFDEF LOCALTRACE},grabThreadID{$ENDIF});
         (*If DownloadImageToFile(sSecure+Backdrop_Size+MetaData.tmdbBackdropPath, Data_Path, Backdrop_File,sDownloadStatus,LastErrorCode,tmdbQueryInternetTimeout) = True then
         Begin
           {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','Download Successful "'+Data_Path+Backdrop_File+'"');{$ENDIF}
@@ -635,7 +662,7 @@ begin
       Begin
         {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','Download URL : "'+sSecure+Still_Size+MetaData.tmdbStillPath+'"');{$ENDIF}
         dlStillImageSearch := True;
-        DownloadImageToFileThreaded(sSecure+Still_Size+MetaData.tmdbStillPath, Data_Path, Still_File,sDLStatusStillImage,ErrCodeStillImage,tmdbQueryInternetTimeout,dlStillImageSuccess,dlStillImagecomplete);
+        DownloadImageToFileThreaded(sSecure+Still_Size+MetaData.tmdbStillPath, Data_Path, Still_File,sDLStatusStillImage,ErrCodeStillImage,tmdbQueryInternetTimeout,dlStillImageSuccess,dlStillImagecomplete{$IFDEF LOCALTRACE},grabThreadID{$ENDIF});
         (*If DownloadImageToFile(sSecure+Still_Size+MetaData.tmdbStillPath, Data_Path, Still_File,sDownloadStatus,LastErrorCode,tmdbQueryInternetTimeout) = True then
         Begin
           {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','Download Successful "'+Data_Path+Still_File+'"');{$ENDIF}

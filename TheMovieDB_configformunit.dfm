@@ -3,7 +3,7 @@ object ConfigForm: TConfigForm
   Top = 352
   BorderStyle = bsDialog
   Caption = 'TheMovieDB Scraper Configuration'
-  ClientHeight = 328
+  ClientHeight = 413
   ClientWidth = 318
   Color = clBtnFace
   Font.Charset = DEFAULT_CHARSET
@@ -17,17 +17,19 @@ object ConfigForm: TConfigForm
   OnKeyPress = FormKeyPress
   DesignSize = (
     318
-    328)
+    413)
   PixelsPerInch = 96
   TextHeight = 13
   object lblMinMediaNameLengthForScrapingByName: TLabel
     Left = 18
     Top = 241
     Width = 220
-    Height = 26
+    Height = 36
+    AutoSize = False
     Caption = 
       'Minimum number of characters in the file/folder'#13#10'name for scrapi' +
       'ng using only the name'
+    WordWrap = True
   end
   object Label1: TLabel
     Left = 36
@@ -604,6 +606,23 @@ object ConfigForm: TConfigForm
       2222222222222222222222222222222222222222222222222222222222222222
       222222222222222222222222222222002222}
   end
+  object LabelMaximumPageResults: TLabel
+    Left = 18
+    Top = 279
+    Width = 202
+    Height = 26
+    Caption = 
+      'Maximum number of result pages to check (more = slower to proces' +
+      's)'
+    WordWrap = True
+  end
+  object Label2: TLabel
+    Left = 18
+    Top = 324
+    Width = 90
+    Height = 13
+    Caption = 'Preferred language'
+  end
   object SecureCommCB: TCheckBox
     Left = 18
     Top = 178
@@ -617,23 +636,23 @@ object ConfigForm: TConfigForm
   end
   object OKButton: TButton
     Left = 228
-    Top = 293
+    Top = 378
     Width = 75
     Height = 25
     Anchors = [akLeft, akBottom]
     Caption = 'OK'
     ModalResult = 1
-    TabOrder = 2
+    TabOrder = 4
   end
   object CancelButton: TButton
     Left = 12
-    Top = 293
+    Top = 378
     Width = 75
     Height = 25
     Anchors = [akLeft, akBottom]
     Caption = 'Cancel'
     ModalResult = 2
-    TabOrder = 3
+    TabOrder = 5
   end
   object edtMinMediaNameLengthForScrapingByName: TEdit
     Left = 251
@@ -642,5 +661,22 @@ object ConfigForm: TConfigForm
     Height = 21
     TabOrder = 1
     OnKeyPress = edtMinMediaNameLengthForScrapingByNameKeyPress
+  end
+  object edtMaxDBPageResults: TEdit
+    Left = 251
+    Top = 282
+    Width = 50
+    Height = 21
+    TabOrder = 2
+    OnKeyPress = edtMinMediaNameLengthForScrapingByNameKeyPress
+  end
+  object LanguageCB: TComboBox
+    Left = 174
+    Top = 320
+    Width = 127
+    Height = 21
+    Style = csDropDownList
+    ItemHeight = 13
+    TabOrder = 3
   end
 end

@@ -18,6 +18,10 @@ type
     Label1: TLabel;
     Bevel1: TBevel;
     Image1: TImage;
+    LabelMaximumPageResults: TLabel;
+    edtMaxDBPageResults: TEdit;
+    Label2: TLabel;
+    LanguageCB: TComboBox;
     procedure FormKeyPress(Sender: TObject; var Key: Char);
     procedure edtMinMediaNameLengthForScrapingByNameKeyPress(
       Sender: TObject; var Key: Char);
@@ -50,6 +54,7 @@ begin
   if not(Key in [#0..#31,'0'..'9']) then Key := #0;
 end;
 
+
 procedure TConfigForm.FormCloseQuery(Sender: TObject;
   var CanClose: Boolean);
 begin
@@ -62,6 +67,7 @@ begin
     Exit;
   End;
 end;
+
 
 end.
 

@@ -7,14 +7,40 @@ interface
 
 
 function FindIMDBIDInNFOFiles(sPath,sMediaFileName : WideString) : Integer;
-function ParseMediaName(MediaName,MediaPath : String; IsFolder : Boolean; CategoryType : Integer; var MediaYear,MediaMonth,MediaDay,MediaSeason,MediaEpisode : Integer; var MediaRes : String) : WideString;
+function ParseMediaName(MediaName : String; MediaPath : WideString; IsFolder : Boolean; CategoryType : Integer; var MediaYear,MediaMonth,MediaDay,MediaSeason,MediaEpisode : Integer; var MediaRes : String) : WideString;
 function GetIMDBIDFromTextFile(FileName : WideString) : Integer;
 function ExtractFileNameNoExt(FileName : String) : String;
 
 
 implementation
 
-uses sysutils, tntsysutils, dateutils, tntclasses, TheMovieDB_misc_utils_unit, global_consts;
+uses sysutils, tntsysutils, dateutils, tntclasses, TheMovieDB_misc_utils_unit, {$IFDEF LOCALTRACE}msgdlgunit,{$ENDIF} global_consts;
+
+
+
+const
+  // Resolution list
+  ResCount   = 12;
+  ResList    : Array[0..ResCount-1] of String =
+   ('720p','1080p','480p','540p','2160p','240p','360p','480i','576i','576p','1080i','4320p');
+
+  // Safe crop words
+  CropCount  = 67;
+  CropList   : Array[0..CropCount-1] of String =
+    ('unrated','rerip','repack','final repack','real proper','readnfo','stv','dircut','remastered', 'criterion', 'colorized version','extended cut',
+     'theatrical cut', 'theatrical edition', 'directors cut', 'director''s cut', 'directors edition', 'director''s edition', 'director''s cut', 'dircut',
+     'hdtv','web dl','dvdrip','bdrip','brrip','bluray','blu ray','hdrip','webrip',
+     'x264','x265','h264','h 264','h 265','xvid','divx','mpeg2','avc',
+     'pdtv','sdtv','ws pdtv','dvdscr','dvd','hddvd','dsr','ws dsr',
+     'dts','dd5','dd2','ac3','aac','aac2','truehd','mp3','flac',
+     '720p','1080p','2160p','4320p',
+     'hdcam','cam','hd ts','ts','tc','vcd','svcd','xxx');
+
+  // Unsafe crop words, must be followed by a safe crop word to be detected
+  FlagCount = 5;
+  FlagList  : Array[0..FlagCount-1] of String =
+    ('proper','internal','limited','docu','extended');
+
 
 
 procedure Split(S : WideString; Ch : Char; sList : TTNTStrings);
@@ -61,6 +87,62 @@ end;
 
 
 function GetMediaData(sList : TTNTStringList; CategoryType : Integer; var iYear, iMonth, iDay, iSeason, iEpisode : Integer) : Integer;
+const
+  MultiLangSeasonCount = 50;
+  MultiLangSeasonList  : Array[0..MultiLangSeasonCount-1] of String =
+   (
+    'season',                // 00 English
+    'сезон',            // 01 Russian+Bulgarian+Serbian+Ukrainian+Bellarusian+Macedonian
+    'الموسم',          // 02 Arabic
+    'denboraldi',            // 03 Basque
+    'ঋতু',             // 04 Bengali
+    'temporada',             // 05 Catalan
+    '季节',                // 06 Chinese Simplified
+    '季節',                // 07 Chinese Traditional
+    'stagione',              // 08 Corsican
+    'sezóna',               // 09 Czech+Slovak
+    'sæson',                // 10 Danish
+    'seizoen',               // 11 Dutch
+    'hooaeg',                // 12 Estonian
+    'saison',                // 13 French
+    'panahon',               // 14 Filipino
+    'kausi',                 // 15 Finnish
+    'jahreszeit',            // 16 German
+    'სეზონი',    // 17 Georgian
+    'εποχή',            // 18 Greek
+    'עונה',              // 19 Hebrew
+    'ऋतु',             // 20 Hindi
+    'évszak',               // 21 Hungarian
+    'stagione',              // 22 Italian
+    'árstíð',             // 23 Icelandic
+    'musim',                 // 24 Indonesian
+    'séasúr',              // 25 Irish
+    'シーズン',          // 26 Japanese
+    'រដូវ',          // 27 Khmer
+    '시즌',                // 28 Korean
+    'demsal',                // 29 Kurish
+    'ລະດູການ', // 30 Lao
+    'sezonas',               // 31 Lithuanian
+    'मौसम',          // 32 Nepali
+    'årstid',               // 33 Norwegian
+    'موسم',              // 34 Pashto+Sindhi
+    'فصل',                // 35 Persian
+    'sezon',                 // 36 Polish+Romanian+Turkish+Haitian Creole
+    'temporada',             // 37 Portuguese+Spanish
+    'ਸੀਜ਼ਨ',       // 38 Punjabi
+    'කන්නයයි', // 39 Sinhala
+    'sezona',                // 40 Slovenian+Croatian+Bosnian+Latvian
+    'msimu',                 // 41 Swahili
+    'säsong',               // 42 Swedish
+    'சீசன்',       // 43 Tamil
+    'ฤดู',             // 44 Thai
+    'موسم',              // 45 Urdo
+    'mavsum',                // 46 Uzbek
+    'Mùa',                  // 47 Vietnamese
+    'tymor',                 // 48 Welsh
+    'inkathi'                // 49 Zulu
+    );
+
 var
   I,I1     : Integer;
   Found    : Boolean;
@@ -69,6 +151,7 @@ var
   sLen1    : Integer;
   sLen2    : Integer;
   lS       : String;
+  lSW      : WideString;
   partFound: Boolean;
 begin
   Result   := -1;
@@ -231,23 +314,31 @@ begin
         End;
       End
         else
-      If Pos('season',lS) = 1 then
       Begin
-        If (sLen = 6) and (I < sList.Count-1) then
+        lSW := TNT_WideLowercase(sList[I]);
+        For I1 := 0 to MultiLangSeasonCount-1 do
         Begin
-          // Match "Season XX"
-          iSeason := StrToIntDef(sList[I+1],-1);
-        End
-          else
-        If sLen > 6 then
-        Begin
-          // Match "SeasonXX"
-          iSeason := StrToIntDef(Copy(sList[I],7,sLen-6),-1);
-        End;
-        If iSeason > -1 then
-        Begin
-          If Result = -1 then Result := I;
-          //Break;
+          //ShowMessageW(lSW+'/'+UTF8Decode(MultiLangSeasonList[I1]));
+          If Pos(UTF8Decode(MultiLangSeasonList[I1]),lSW) = 1 then
+          Begin
+            sLen2 := Length(UTF8Decode(MultiLangSeasonList[I1]));
+            If (sLen = sLen2) and (I < sList.Count-1) then
+            Begin
+              // Match "Season XX"
+              iSeason := StrToIntDef(sList[I+1],-1);
+            End
+              else
+            If sLen > sLen2 then
+            Begin
+              // Match "SeasonXX"
+              iSeason := StrToIntDef(Copy(sList[I],sLen2+1,sLen-sLen2),-1);
+            End;
+            If iSeason > -1 then
+            Begin
+              If Result = -1 then Result := I;
+              //Break;
+            End;
+          End;
         End;
       End;
     End;
@@ -256,29 +347,8 @@ end;
 
 
 
-function ParseMediaName(MediaName,MediaPath : String; IsFolder : Boolean; CategoryType : Integer; var MediaYear,MediaMonth,MediaDay,MediaSeason,MediaEpisode : Integer; var MediaRes : String) : WideString;
-const
-  // Resolution list
-  ResCount   = 12;
-  ResList    : Array[0..ResCount-1] of String =
-   ('720p','1080p','480p','540p','2160p','240p','360p','480i','576i','576p','1080i','4320p');
-
-  // Safe crop words
-  CropCount  = 58;
-  CropList   : Array[0..CropCount-1] of String =
-    ('unrated','rerip','repack','final repack','real proper','readnfo','stv','dircut','remastered',
-     'theatrical cut', 'theatrical edition', 'directors cut', 'director''s cut', 'directors edition', 'director''s edition',
-     'hdtv','web dl','dvdrip','bdrip','brrip','bluray','blu ray','hdrip','webrip',
-     'x264','x265','h264','h 264','h 265','xvid','divx','mpeg2','avc',
-     'pdtv','sdtv','ws pdtv','dvdscr','dvd','hddvd','dsr','ws dsr',
-     'dts','dd5','dd2','ac3','aac','aac2','truehd','mp3','flac',
-     'hdcam','cam','hd ts','ts','tc','vcd','svcd','xxx');
-
-  // Unsafe crop words, must be followed by a safe crop word to be detected
-  FlagCount = 4;
-  FlagList  : Array[0..FlagCount-1] of String =
-    ('proper','internal','limited','docu');
-
+{$WARNINGS OFF}
+function ParseMediaName(MediaName : String; MediaPath : WideString; IsFolder : Boolean; CategoryType : Integer; var MediaYear,MediaMonth,MediaDay,MediaSeason,MediaEpisode : Integer; var MediaRes : String) : WideString;
 var
   I,I1           : Integer;
   lS             : WideString;
@@ -286,6 +356,7 @@ var
   iCropPos       : Integer;
   iResPos        : Integer;
   nList          : TTNTStringList;
+  sList          : TTNTStringList;
   iFlag          : Integer;
   iFlagPos       : Integer;
   iDay           : Integer;
@@ -299,6 +370,7 @@ var
   parentFolderMediaNameSeason  : Integer;
   parentFolderMediaNameEpisode : Integer;
   parentFolderMediaNameRes     : String;
+
 begin
   // Strip file extension if we're dealing with media files, with folders, pass StripFileExt=False
   If IsFolder = True then
@@ -318,6 +390,10 @@ begin
 
   // Replace ".", "_" and "-" characters with spaces and UTF8 decode to unicode
   Result := ConvertCharsToSpaces(UTF8Decode(MediaName));
+
+  // Strip any data after the "^" special character (to allow naming tags to be ignored)
+  I := Pos('^',Result);
+  If I > 0 then Result := Copy(Result,1,I-1);
 
   lS := TNT_WideLowercase(Result)+' ';
 
@@ -379,7 +455,23 @@ begin
   nList := TTNTStringList.Create;
   Split(Result,' ',nList); // Split words into an array
   iMediaDataIdx := GetMediaData(nList,CategoryType,iYear,iMonth,iDay,MediaSeason,MediaEpisode);
-//  If (iYear > -1) or (MediaSeason > -1) then
+
+  {
+  // This code doesn't work
+  If iYear = -1 then
+  Begin
+    // Try finding a year using brute force
+    sList := TTNTStringList.Create;
+    Split(ConvertCharsToSpaces(UTF8Decode(MediaName)),' ',sList); // Split words into an array
+    For I := 0 to sList.Count do
+    Begin
+      iYear := StrToIntDef(sList[I],-1);
+      If (iYear > 1885) and (iYear < 2200) then Break else iYear := -1;
+    End;
+    sList.Free
+  End;}
+
+  //  If (iYear > -1) or (MediaSeason > -1) then
   If (iMediaDataIdx > -1) then
   Begin
     MediaYear := iYear;
@@ -393,14 +485,16 @@ begin
     Begin
       Result := '';
       // we should try to extract the Title from the parent folder in the following cases
-      If    (IsFolder and (MediaSeason > -1)) //we are trying to process a folder whose name only contains the season/part number
-         or (not IsFolder and (MediaEpisode > -1)) //we are trying to process a file whose name only contains episode and probably season (but not required) number (example: \Breaking Bad\Season 02\E01 - Seven Thirty-Seven.mkv)
+      If ((IsFolder and (MediaSeason > -1)) //we are trying to process a folder whose name only contains the season/part number
+         or (not IsFolder and (MediaEpisode > -1))) //we are trying to process a file whose name only contains episode and probably season (but not required) number (example: \Breaking Bad\Season 02\E01 - Seven Thirty-Seven.mkv)
+         and (MediaPath <> '') 
       then
       Begin
         // Strip backslash from folder names as needed
         If (MediaPath[Length(MediaPath)] = '\') then MediaPath := Copy(MediaPath,1,Length(MediaPath)-1);
+        //ShowMessageW(MediaPath);
 
-        Result := ParseMediaName(ExtractFileName(MediaPath),WideExtractFilePath(MediaPath),True,CategoryType,parentFolderMediaNameYear,parentFolderMediaNameMonth,parentFolderMediaNameDay,parentFolderMediaNameSeason,parentFolderMediaNameEpisode,parentFolderMediaNameRes);
+        Result := ParseMediaName(UTF8Encode(WideExtractFileName(MediaPath)),WideExtractFilePath(MediaPath),True,CategoryType,parentFolderMediaNameYear,parentFolderMediaNameMonth,parentFolderMediaNameDay,parentFolderMediaNameSeason,parentFolderMediaNameEpisode,parentFolderMediaNameRes);
 
         If MediaYear    = -1 then MediaYear    := parentFolderMediaNameYear;
         If MediaMonth   = -1 then MediaMonth   := parentFolderMediaNameMonth;
@@ -418,13 +512,15 @@ begin
     End;
   End;
 
+  // Moved earlier in the function
   // Strip any data after the "^" special character (to allow naming tags to be ignored)
-  I := Pos('^',Result);
-  If I > 0 then Result := Copy(Result,1,I-1);
+  //I := Pos('^',Result);
+  //If I > 0 then Result := Copy(Result,1,I-1);
 
   Result := Trim(Result);
   nList.Free;
 end;
+//{$WARNINGS ON}
 
 
 function FindIMDBIDInNFOFiles(sPath,sMediaFileName : WideString) : Integer;
