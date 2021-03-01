@@ -1,3 +1,4 @@
+
 {$I SCRAPER_DEFINES.INC}
 
      {********************************************************************
@@ -81,6 +82,7 @@ Const
   mdfDirectorStr    : String = 'director';
   mdfCastStr        : String = 'cast';
   mdfOverViewStr    : String = 'overview';
+  mdfMPAAratingStr  : String = 'mpaa_rating';
 
   IMAGE_FILE_LARGE_ADDRESS_AWARE = $0020;
   {$SetPEFlags IMAGE_FILE_LARGE_ADDRESS_AWARE}
@@ -275,6 +277,7 @@ var
   SkipSearchForTVShowID : Boolean;
   tmpTVShowBackdropPath : String;
   tmpTVShowGenre        : WideString;
+  tmpTVShowRating       : WideString;
   LastErrorCode         : Integer;
 
   sDLStatusBackdrop     : String;
@@ -357,7 +360,7 @@ begin
   // Return either true or false to indicate scraping success/failure.
   // Do not create a data file on failure.
 
-
+  
 
   // Here is sample code to grab meta-data from TheMovieDB.org,
   // to prevent conflicts, The API key is not included, you can
@@ -395,7 +398,6 @@ begin
     // Split path and name
     Media_Path := WideExtractFilePath(UTF8Decode(Media_Name));
     Media_Name := ExtractFileName(Media_Name);
-
 
     // Reset metadata record
     With MetaData do
@@ -497,6 +499,7 @@ begin
               MetaData.tmdbTVShowName := PTVSeriesIDRecord(TVSeriesIDList[I])^.tvShowName;
               tmpTVShowBackdropPath   := PTVSeriesIDRecord(TVSeriesIDList[I])^.tvShowBackdropPath;
               tmpTVShowGenre          := PTVSeriesIDRecord(TVSeriesIDList[I])^.tvShowGenre;
+              tmpTVShowRating         := PTVSeriesIDRecord(TVSeriesIDList[I])^.tvShowRating;
               {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','TV Show ID (from cache): '+IntToStr(MetaData.tmdbID)+' TV Show Name (from cache): '+MetaData.tmdbTVShowName+' TV Show Backdrop Path (from cache): '+MetaData.tmdbBackdropPath);{$ENDIF}
               Break;
             End;
@@ -515,6 +518,7 @@ begin
           SkipSearchForTVShowID := True;
           tmpTVShowBackdropPath := MetaData.tmdbBackdropPath;
           tmpTVShowGenre        := MetaData.tmdbGenre;
+          tmpTVShowRating       := MetaData.tmdbMPAArating;
           {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','TV Show ID was not found in the cache, Search for TV Show ID (after)'){$ENDIF};
         End;
 
@@ -535,6 +539,7 @@ begin
               Begin
                 if MetaData.tmdbBackdropPath = '' then MetaData.tmdbBackdropPath := tmpTVShowBackdropPath;
                 if MetaData.tmdbGenre = '' then MetaData.tmdbGenre := tmpTVShowGenre;
+                if MetaData.tmdbMPAArating = '' then MetaData.tmdbMPAArating := tmpTVShowRating;
               End
                 else
               Begin
@@ -548,6 +553,7 @@ begin
               If SearchTheMovieDB_TVEpisodeByID(MetaData.tmdbID,mdMediaNameSeason,mdMediaNameEpisode,SecureHTTP,sList,MetaData,LastErrorCode{$IFDEF LOCALTRACE},grabThreadID{$ENDIF}) = True then
               Begin
                 if MetaData.tmdbGenre = '' then MetaData.tmdbGenre := tmpTVShowGenre;
+                if MetaData.tmdbMPAArating = '' then MetaData.tmdbMPAArating := tmpTVShowRating;
               End
                 else
               Begin
@@ -606,6 +612,7 @@ begin
         {If MetaData.tmdbDirector         <> '' then} mdList.Add(mdfPrefix+mdfDirectorStr    +'='+          MetaData.tmdbDirector     );
         {If MetaData.tmdbCast             <> '' then} mdList.Add(mdfPrefix+mdfCastStr        +'='+          MetaData.tmdbCast         );
         {If MetaData.tmdbOverView         <> '' then} mdList.Add(mdfPrefix+mdfOverViewStr    +'='+          MetaData.tmdbOverView     );
+                                                      mdList.Add(mdfPrefix+mdfMPAAratingStr  +'='+          MetaData.tmdbMPAArating   );
 
         Try
           // Create the destination folder if it doesn't exist
@@ -695,6 +702,9 @@ begin
           else
         Begin
           If LastErrorCode = 0 then LastErrorCode := ErrCodePoster;
+
+          //CreateBlankImage(Data_Path+Still_File
+
           {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(grabThreadID)+'.txt','Failed to download Poster.'){$ENDIF};
         End;
       End;

@@ -88,11 +88,12 @@ end;
 
 function GetMediaData(sList : TTNTStringList; CategoryType : Integer; var iYear, iMonth, iDay, iSeason, iEpisode : Integer) : Integer;
 const
-  MultiLangSeasonCount = 50;
+  MultiLangSeasonCount = 51;
   MultiLangSeasonList  : Array[0..MultiLangSeasonCount-1] of String =
    (
     'season',                // 00 English
     'сезон',            // 01 Russian+Bulgarian+Serbian+Ukrainian+Bellarusian+Macedonian
+    'выпуск',          // 02 Russian
     'الموسم',          // 02 Arabic
     'denboraldi',            // 03 Basque
     'ঋতু',             // 04 Bengali
@@ -568,9 +569,10 @@ end;
 
 function GetIMDBIDFromTextFile(FileName : WideString) : Integer;
 var
-  I     : Integer;
-  iPos  : Integer;
-  sList : TTNTStringList;
+  I,I1    : Integer;
+  iPos    : Integer;
+  sList   : TTNTStringList;
+  sResult : String;
 begin
   Result := -1;
   sList  := TTNTStringList.Create;
@@ -588,7 +590,15 @@ begin
       iPos := Pos('imdb.com/title/',TNT_WideLowercase(sList[I]));
       If iPos > 0 then
       Begin
-        Result := StrToIntDef(Copy(sList[I],iPos+17,7),-1);
+        sResult := Copy(sList[I],iPos+17,Length(sList[I])-(iPos+16));
+
+        For I1 := 1 to Length(sResult) do If sResult[I1] in ['0'..'9'] = False then
+        Begin
+          sResult := Copy(sResult,1,I1-1);
+          Break;
+        End;
+
+        Result  := StrToIntDef(sResult,-1);
         If Result > -1 then Break;
       End;
     End;
