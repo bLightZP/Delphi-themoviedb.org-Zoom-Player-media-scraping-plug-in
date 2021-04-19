@@ -466,7 +466,7 @@ begin
               Begin
                 For I1 := 0 to jReleaseDates.AsArray.Length-1 do
                 Begin
-                  jReleaseData := jReleaseDates.AsArray[I];
+                  jReleaseData := jReleaseDates.AsArray[I1];
                   If jReleaseData <> nil then
                   Begin
                     searchMetaData.tmdbMPAArating := jReleaseData.S[tmdbCertificationStr];
@@ -548,7 +548,7 @@ var
 
 begin
   {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','SearchTheMovieDB (before)');{$ENDIF}
-  //ShowMessage(IntToStr(iMediaNameYear));
+  //ShowMessage('2: '+IntToStr(iMediaNameYear));
   sDownloadStatus := '';
   Result := False;
 
@@ -874,7 +874,9 @@ begin
   AddLanguageCode(sQueryURL);
 
   {$IFDEF LOCALTRACE}DebugMsgFT('c:\log\ScrapeTheMovieDB_'+IntToStr(ThreadID)+'.txt','TV Show ID Search URL : "'+sQueryURL+'"');{$ENDIF}
+  //ShowMessage('1: '+IntToStr(MediaNameYear));
   Result := SearchTheMovieDB(sQueryURL,sName,osmTV,MediaNameYear,sList,searchMetaData.tmdbID,ErrorCode{$IFDEF LOCALTRACE},ThreadID{$ENDIF});
+
 
   If Result = True then
   Begin
